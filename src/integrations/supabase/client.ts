@@ -25,8 +25,8 @@ export const supabase = createClient(url, anon, {
     headers: {
       "x-client-info": "unemi-admin",
     },
-  },
-  functions: {
-    url: functionsUrl,
-  },
+    functions: {
+      url: functionsUrl,
+    },
+  },  
 });

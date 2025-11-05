@@ -55,7 +55,7 @@ export default function RouteCreateModal({ isOpen = true, onClose, onCreated }: 
         .from("rooms")
         .select(`
           id, name, room_number, directions,
-          floor:floors(
+          floor:floor_id( 
             id, floor_number, floor_name,
             building:buildings(id, name)
           )

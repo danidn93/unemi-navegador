@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Image as ImageIcon, Upload, X } from "lucide-react";
+import { X } from "lucide-react";
 
 type ReasonSeverity = "info" | "warn" | "critical";
+type AppRole = "public" | "student" | "admin";
 export type ReasonRequest = {
   action: string;
   entityTable: string;
@@ -20,6 +21,10 @@ interface Props {
   roomId: string;
   onClose: () => void;
   onSaved: () => void;
+  /**
+   * Callback opcional para solicitar motivo al usuario cuando hagas cambios sensibles
+   * (tu Index.tsx ya lo provee). Si no lo envías, no se pedirá motivo.
+   */
   requestReason?: (req: ReasonRequest) => Promise<{ reason: string; severity: ReasonSeverity }>;
 }
 
@@ -40,6 +45,7 @@ type RoomRow = {
   image_url: string | null;
   floor_id: string;
   room_type_id: string | null;
+  target: AppRole;
   floor: {
     id: string;
     floor_number: number;
@@ -56,13 +62,9 @@ const fromCSV = (s: string) =>
     .map((x) => x.trim())
     .filter(Boolean);
 
-// Bucket donde subiremos la imagen del room
-const ROOM_BUCKET = "room_maps";
-
 export default function RoomEditModal({ roomId, onClose, onSaved, requestReason }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
   const [room, setRoom] = useState<RoomRow | null>(null);
 
@@ -84,6 +86,7 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
   const [buildingId, setBuildingId] = useState<string>("");
   const [floorId, setFloorId] = useState<string>("");
   const [roomTypeId, setRoomTypeId] = useState<string>("");
+  const [target, setTarget] = useState<AppRole>("public");
 
   // Carga catálogos y habitación
   useEffect(() => {
@@ -104,12 +107,12 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
           .from("rooms")
           .select(
             `
-            id,name,room_number,description,capacity,equipment,keywords,directions,actividades,image_url,floor_id,room_type_id,
-            floor:floors(
+            id,name,room_number,description,capacity,equipment,keywords,directions,actividades,image_url,floor_id,room_type_id,target,
+            floor:floor_id(
               id,floor_number,floor_name,
               building:buildings(id,name)
             ),
-            room_type:room_types(id,name)
+            room_type:room_type_id(id,name)
           `
           )
           .eq("id", roomId)
@@ -133,6 +136,7 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
         setRoomTypeId(r.room_type?.id || r.room_type_id || "");
         setFloorId(r.floor?.id || r.floor_id);
         setBuildingId(r.floor?.building.id || "");
+        setTarget(r.target || "public");
 
         if (r.floor?.building.id) {
           const { data: fl } = await supabase
@@ -172,38 +176,6 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
     [buildings, buildingId]
   );
 
-  // Subir imagen al bucket room_maps
-  const handleUploadImage: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !room) return;
-    try {
-      setUploading(true);
-      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `rooms/${room.id}-${Date.now()}.${ext}`;
-
-      const { error: upErr } = await supabase.storage
-        .from(ROOM_BUCKET)
-        .upload(path, file, {
-          upsert: true,
-          cacheControl: "3600",
-          contentType: file.type || "image/*",
-        });
-
-      if (upErr) throw upErr;
-
-      const { data: pub } = supabase.storage.from(ROOM_BUCKET).getPublicUrl(path);
-      const url = pub.publicUrl;
-      setImageUrl(url);
-      toast.success("Imagen subida. No olvides guardar los cambios.");
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.message || "No se pudo subir la imagen");
-    } finally {
-      setUploading(false);
-      e.currentTarget.value = "";
-    }
-  };
-
   const handleSave = async () => {
     if (!room) return;
     if (!name.trim()) return toast.error("Nombre requerido");
@@ -213,6 +185,7 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
     try {
       setSaving(true);
 
+      // Si te interesa pedir motivo para auditoría:
       if (requestReason) {
         await requestReason({
           action: "update",
@@ -234,6 +207,7 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
         image_url: imageUrl || null,
         floor_id: floorId,
         room_type_id: roomTypeId,
+        target: target,
       };
 
       const { error } = await supabase.from("rooms").update(payload).eq("id", room.id);
@@ -271,35 +245,6 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
           <div className="text-sm text-muted-foreground">No se encontró la información.</div>
         ) : (
           <>
-            {/* Imagen */}
-            <div className="grid gap-2 mb-4">
-              <Label className="flex items-center gap-2">
-                <ImageIcon className="h-4 w-4" /> Imagen de la habitación
-              </Label>
-              <div className="flex items-center gap-3">
-                <div className="w-32 h-24 rounded-lg border bg-muted/30 grid place-items-center overflow-hidden">
-                  {imageUrl ? (
-                    <img src={imageUrl} alt="room" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="text-xs text-muted-foreground px-2 text-center">Sin imagen</div>
-                  )}
-                </div>
-                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer">
-                  <Upload className="h-4 w-4" />
-                  <span>{uploading ? "Subiendo…" : "Subir"}</span>
-                  <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={handleUploadImage} />
-                </label>
-                {imageUrl && (
-                  <Button variant="secondary" onClick={() => setImageUrl("")} disabled={uploading}>
-                    Quitar
-                  </Button>
-                )}
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Se guarda en el bucket público <code>{ROOM_BUCKET}/rooms/…</code>. La URL se asocia al guardar.
-              </p>
-            </div>
-
             {/* Edificio y Piso */}
             <div className="grid md:grid-cols-2 gap-4 mb-4">
               <div className="grid gap-1.5">
@@ -356,6 +301,18 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
                   ))}
                 </select>
               </div>
+              <div className="grid gap-1.5">
+                <Label>Visibilidad (Target)</Label>
+                <select
+                  className="px-2 py-1.5 rounded border bg-background"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value as AppRole)}
+                >
+                  <option value="public">Público (Todos)</option>
+                  <option value="student">Estudiantes (Logueados)</option>
+                  <option value="admin">Administrativos (Logueados)</option>
+                </select>
+              </div>
             </div>
 
             {/* Datos principales */}
@@ -377,6 +334,10 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
                   onChange={(e) => setCapacity(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
                 />
               </div>
+              <div className="grid gap-1.5">
+                <Label>Imagen (URL)</Label>
+                <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" />
+              </div>
             </div>
 
             {/* Listas coma separadas */}
@@ -391,7 +352,11 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
               </div>
               <div className="grid gap-1.5">
                 <Label>Actividades (coma-separado)</Label>
-                <Input value={actividades} onChange={(e) => setActividades(e.target.value)} placeholder="Procesos institucionales, Acreditación" />
+                <Input
+                  value={actividades}
+                  onChange={(e) => setActividades(e.target.value)}
+                  placeholder="Procesos institucionales, Acreditación"
+                />
               </div>
             </div>
 
@@ -414,7 +379,7 @@ export default function RoomEditModal({ roomId, onClose, onSaved, requestReason 
         <Button variant="outline" onClick={onClose} disabled={saving}>
           Cancelar
         </Button>
-        <Button onClick={handleSave} disabled={saving || loading || uploading}>
+        <Button onClick={handleSave} disabled={saving || loading}>
           {saving ? "Guardando..." : "Guardar"}
         </Button>
       </div>

@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Image as ImageIcon, Upload } from "lucide-react";
 
+type AppRole = "public" | "student" | "admin";
+
 export interface RoomFormProps {
   onClose: () => void;
   onRoomAdded: () => void;
@@ -58,6 +60,7 @@ export default function RoomForm({
   );
   const [floorId, setFloorId] = useState<string | "">("");
   const [roomTypeId, setRoomTypeId] = useState<string | "">("");
+  const [target, setTarget] = useState<AppRole>("public");
 
   const [name, setName] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
@@ -336,6 +339,7 @@ export default function RoomForm({
         directions: directions || null,
         actividades: actividadesArray.length ? actividadesArray : null,
         image_url: imageUrl || null,
+        target: target,
       });
       if (error) throw error;
 
@@ -505,6 +509,21 @@ export default function RoomForm({
                 <Button onClick={handleSaveRoomType} disabled={saving}>Añadir</Button>
               </div>
             </div>
+
+            <div className="grid gap-1.5 mb-4">
+              <Label>Visibilidad (Target)</Label>
+              <Select value={target} onValueChange={(v) => setTarget(v as AppRole)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona visibilidad" />
+                </SelectTrigger>
+                <SelectContent position="popper" className="z-[2400]">
+                  <SelectItem value="public">Público (Todos)</SelectItem>
+                  <SelectItem value="student">Estudiantes (Logueados)</SelectItem>
+                  <SelectItem value="admin">Administrativos (Logueados)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
           </div>
 
           {/* Datos de la habitación */}
