@@ -1,0 +1,3 @@
+# supabase/functions/config.toml
+[functions.invite-admin]
+verify_jwt = false
